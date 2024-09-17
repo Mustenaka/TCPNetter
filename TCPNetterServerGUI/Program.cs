@@ -1,6 +1,6 @@
 using System.Runtime.InteropServices;
 
-namespace TCPNetter
+namespace TCPNetterServerGUI
 {
     internal static class Program
     {
@@ -18,7 +18,7 @@ namespace TCPNetter
         [STAThread]
         static void Main()
         {
-            AllocConsole();
+            AllocConsole(); // œ‘ æøÿ÷∆Ã®
 
             // To customize application configuration such as set high DPI settings or default font,
             // see https://aka.ms/applicationconfiguration.

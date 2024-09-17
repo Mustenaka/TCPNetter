@@ -4,20 +4,19 @@
     <OutputType>WinExe</OutputType>
     <TargetFramework>net8.0-windows</TargetFramework>
     <Nullable>enable</Nullable>
-    <UseWindowsForms>true</UseWindowsForms>
+    <UseWindowsForms>True</UseWindowsForms>
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="DotNetty.Buffers" Version="0.7.6" />
+    <PackageReference Include="AntdUI" Version="1.6.1" />
     <PackageReference Include="DotNetty.Codecs" Version="0.7.6" />
-    <PackageReference Include="DotNetty.Transport" Version="0.7.6" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
   </ItemGroup>
 
   <ItemGroup>
-    <Folder Include="Model\" />
-    <Folder Include="Message\" />
+    <Folder Include="GUI\Command\" />
+    <Folder Include="Tools\" />
   </ItemGroup>
 
 </Project>

@@ -47,54 +47,78 @@ public class Client
 
     public async Task SendMessageAsync(MessageModel messageModel)
     {
-        // Serialize the MessageModel to JSON using System.Text.Json
-        var jsonMessage = JsonSerializer.Serialize(messageModel);
+        try
+        {
+            if (_stream == null)
+            {
+                return;
+            }
 
-        // Convert the JSON string to bytes and append a newline
-        byte[] buffer = Encoding.UTF8.GetBytes(jsonMessage + "\n");
+            // Serialize the MessageModel to JSON using System.Text.Json
+            var jsonMessage = JsonSerializer.Serialize(messageModel);
 
-        // Send the message
-        await _stream.WriteAsync(buffer, 0, buffer.Length);
-        Console.WriteLine(@$"Message sent: {jsonMessage}");
+            // Convert the JSON string to bytes and append a newline
+            byte[] buffer = Encoding.UTF8.GetBytes(jsonMessage + "\n");
+
+            // Send the message
+            await _stream.WriteAsync(buffer, 0, buffer.Length);
+            Console.WriteLine(@$"Message sent: {jsonMessage}");
+        }catch (Exception err)
+        {
+            Console.WriteLine(err.Message);
+        }
     }
 
     public async Task<MessageModel?> ReceiveMessageAsync()
     {
-        byte[] buffer = new byte[1024]; // 缓冲区
-        int bytesRead;
-
-        while ((bytesRead = await _stream.ReadAsync(buffer, 0, buffer.Length)) > 0)
+        try
         {
-            // 将收到的数据转换为字符串并添加到消息缓冲区中
-            _messageBuffer.Append(Encoding.UTF8.GetString(buffer, 0, bytesRead));
-
-            // 处理消息，直到找到一个完整的JSON消息（由换行符\n结束）
-            while (true)
+            if (_stream == null)
             {
-                string? message = ExtractMessage();
-                if (message == null)
-                    break;
+                return null;
+            }
 
-                try
+            byte[] buffer = new byte[1024]; // 缓冲区
+            int bytesRead;
+
+            while ((bytesRead = await _stream.ReadAsync(buffer, 0, buffer.Length)) > 0)
+            {
+                // 将收到的数据转换为字符串并添加到消息缓冲区中
+                _messageBuffer.Append(Encoding.UTF8.GetString(buffer, 0, bytesRead));
+
+                // 处理消息，直到找到一个完整的JSON消息（由换行符\n结束）
+                while (true)
                 {
-                    var receivedModel = JsonSerializer.Deserialize<MessageModel>(message);
-                    if (receivedModel != null)
+                    string? message = ExtractMessage();
+                    if (message == null)
+                        break;
+
+                    try
                     {
-                        Console.WriteLine(
-                            @$"Received from server: MessageType={receivedModel.MessageType}, Message={receivedModel.Message}");
-                    }
+                        var receivedModel = JsonSerializer.Deserialize<MessageModel>(message);
+                        if (receivedModel != null)
+                        {
+                            Console.WriteLine(
+                                @$"Received from server: MessageType={receivedModel.MessageType}, Message={receivedModel.Message}");
+                        }
 
-                    return receivedModel;
-                }
-                catch (JsonException ex)
-                {
-                    Console.WriteLine(@$"Error deserializing response: {ex.Message}");
-                    Console.WriteLine(@"Raw response: " + message);
+                        return receivedModel;
+                    }
+                    catch (JsonException ex)
+                    {
+                        Console.WriteLine(@$"Error deserializing response: {ex.Message}");
+                        Console.WriteLine(@"Raw response: " + message);
+                    }
                 }
             }
+
+            return null;
         }
-        
-        return null;
+        catch (Exception err)
+        {
+            Console.WriteLine(err.Message);
+            return null;
+        }
     }
 
     private string? ExtractMessage()

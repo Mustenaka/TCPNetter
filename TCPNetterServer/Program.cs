@@ -42,6 +42,10 @@ namespace TCPNetterServer
             }
         }
 
+        /// <summary>
+        /// 运行无GUI服务
+        /// </summary>
+        /// <param name="args"></param>
         private static void Main(string[] args)
         {
             RunServerAsync().Wait();
