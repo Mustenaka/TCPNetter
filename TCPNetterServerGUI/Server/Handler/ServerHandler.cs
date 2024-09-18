@@ -1,62 +1,32 @@
 ﻿using System.Collections.Concurrent;
-using System.Globalization;
 using System.Text;
-using DotNetty.Buffers;
-using DotNetty.Codecs;
-using DotNetty.Common.Concurrency;
-using DotNetty.Handlers.Flow;
 using DotNetty.Transport.Channels;
-using DotNetty.Transport.Channels.Groups;
-using DotNetty.Transport.Channels.Pool;
-using Newtonsoft.Json;
 using TCPNetterServerGUI.Server.Model;
+using TCPNetterServerGUI.Tools;
 
 namespace TCPNetterServerGUI.Server.Handler;
 
-public class NetterServerHandler : ChannelHandlerAdapter
+public class NetterServerHandler(MainForm mainForm) : ChannelHandlerAdapter
 {
-    //private static readonly DefaultChannelGroup channelGroup = new DefaultChannelGroup(
-    //    new SingleThreadEventExecutor("GroupEventExecutor", TimeSpan.FromSeconds(1))
-    //    );
-
-    // 定义一个TaskCompletionSource来等待回传消息
-    private TaskCompletionSource<MessageModel> _responseTcs;
-
     private static readonly ConcurrentDictionary<string, ServerModel> Clients = new ConcurrentDictionary<string, ServerModel>();
     private static readonly ConcurrentDictionary<string, DateTime> LastHeartbeat = new ConcurrentDictionary<string, DateTime>();
 
-    private MainForm _mainForm;
-
-    public NetterServerHandler(MainForm mainForm)
-    {
-        _mainForm = mainForm;
-    }
-
-    //public override void HandlerAdded(IChannelHandlerContext context)
-    //{
-    //    IChannel channel = context.Channel;
-    //    channelGroup.WriteAndFlushAsync(@$"[Server]:{channel.RemoteAddress} join.");
-    //    channelGroup.Add(channel);
-    //}
-
-    //public override void HandlerRemoved(IChannelHandlerContext context)
-    //{
-    //    IChannel channel = context.Channel;
-    //    channelGroup.WriteAndFlushAsync(@$"[Server]:{channel.RemoteAddress} leave.");
-    //}
-
+    /// <summary>
+    /// 接受消息 | 这里在业务逻辑增长之下需要扩充设计模式
+    /// </summary>
+    /// <param name="context"></param>
+    /// <param name="input"></param>
     public override void ChannelRead(IChannelHandlerContext context, object input)
     {
-        var channelID = context.Channel.Id.AsShortText();
+        var channelId = context.Channel.Id.AsShortText();
 
         var message = input as MessageModel;
 
         switch (message.MessageType)
         {
             case "Heartbeats":  // 接受的心跳数据
-                Console.WriteLine(@"Heartbeat received from device: " + message.DeviceName);
-
-                //LastHeartbeat[channelID] = DateTime.Now; // 更新心跳时间
+                Console.WriteLine(@$"Heartbeat received from {channelId}:{message.DeviceName}");
+                LastHeartbeat[channelId] = DateTime.Now; // 更新心跳时间
                 context.WriteAndFlushAsync(new MessageModel
                 {
                     Id = message.Id,
@@ -68,7 +38,7 @@ public class NetterServerHandler : ChannelHandlerAdapter
                 });
                 break;
             case "Echo":    // 接受的回响数据
-                Console.WriteLine(@"Echo message received from device: " + message.DeviceName);
+                Console.WriteLine(@$"Echo message received from {channelId}:{message.DeviceName}");
                 context.WriteAndFlushAsync(new MessageModel
                 {
                     Id = message.Id,
@@ -80,18 +50,25 @@ public class NetterServerHandler : ChannelHandlerAdapter
                 });
                 break;
             case "Command": // 接受的命令数据
-                Console.WriteLine(@"Command received: " + message.Message);
-                // TODO: 在这里处理具体的服务器逻辑
+                Console.WriteLine(@$"Command received:  from {channelId}:{message.DeviceName} 
+                                    | Command:{message.Command} to {message.Target} message: {message.Message}");
                 switch (message.Command)
                 {
                     case "Broadcast":   // 表示挂广播这个消息给其他受控制端口
-                        NetterServerHandler.BroadcastMessage(message.Message);
+                        NetterServerHandler.BroadcastMessage(message.Message).Wait();
                         break;
-                    case "SendMessageToClient": // 表示定点发送给某一特殊客户端消息
-                        SendMessageAndWaitResponseAsync(message.Target, message.Message, channelID);
+                    case "SendMessageById":     // 表示定点发送给某一特殊客户端消息(通过通道Id)
+                        SendMessageAndWaitResponseAsync(message.Target, message.Message, channelId);
+                        break;
+                    case "SendMessageByName":   // 表示定点发送给某一特殊客户端消息(通过设备名称)
+                        if (!string.IsNullOrEmpty(message.Target))
+                        {
+                            var targetId = Clients.GetChannelID(message.Target);
+                            SendMessageAndWaitResponseAsync(targetId, message.Message, channelId);
+                        }
                         break;
                     case "GetAll":  // 获取全部的服务信息
-                        NetterServerHandler.GetAllClient(channelID);
+                        NetterServerHandler.GetAllClient(channelId).Wait();
                         break;
                     case "GetMyHistory":  // 根据自身获取历史记录
                         break;
@@ -100,49 +77,59 @@ public class NetterServerHandler : ChannelHandlerAdapter
                 }
                 break;
             case "Message": // 接受的消息数据
-                Console.WriteLine(@"Message received: " + message.Message);
-                // TODO: 在这里处理具体的客户端逻辑
+                Console.WriteLine(@$"Message received: from {channelId}:{message.DeviceName} | Message {message.Message}");
                 // 更新UI
-                _mainForm.UpdateConnectionStatus(channelID!, message.DeviceName!, message.Message!);
+                mainForm.UpdateConnectionStatus(channelId!, message.DeviceName!, message.Message!);
                 // 更新对应Model
-                UpdateModel(channelID, message.DeviceName, message.Message);
+                UpdateModel(channelId, message.DeviceName, message.Message);
                 // 返回信息 - 不再需要客户端返回
                 context.WriteAndFlushAsync(new MessageModel
                 {
                     Id = message.Id,
                     DeviceName = message.DeviceName,
                     MessageType = "NoCallback",
-                    Message = "Message received kkk"
+                    Message = "Message received" + message.Message,
                 });
                 break;
-            case "NoCallback":    // 用于客户端表示确认收到，不需要回应
-                Console.WriteLine(@"NoCallback:" + message.Message);
-                //_responseTcs?.TrySetResult(message);
+            case "Callback":    // 用于客户端表示确认收到，需要回应
+                Console.WriteLine($@"Callback received: from {channelId}:{message.DeviceName} | Message {message.Message}");
                 // 更新UI
-                _mainForm.UpdateConnectionStatus(channelID!, message.DeviceName!, message.Message!);
+                mainForm.UpdateConnectionStatus(channelId!, message.DeviceName!, message.Message!);
+                // 如果这个消息携带目标ID，则需要根据这个目标ID返回这则Callback消息
                 if (!string.IsNullOrEmpty(message.Target))
                 {
-                    SendCallBackMessageToClient(message.Target, message.Message);
+                    SendCallBackMessageToClient(message.Target, message.Message!).Wait();
                 }
                 break;
-            default:
+            case "NoCallback": // 用于客户端表示确认收到，不需要回应
+                Console.WriteLine($@"NoCallback received: from {channelId}:{message.DeviceName} | Message {message.Message}");
+                break;
+            default:    // 错误命令
                 context.WriteAndFlushAsync(new MessageModel
                 {
-                    Id = channelID,
+                    Id = channelId,
                     DeviceName = "",
                     MessageType = "Error",
-                    Message = "Unknow Message type"
+                    Message = "Unknown Message type"
                 });
                 break;
         }
     }
 
+    /// <summary>
+    /// 消息完成读取
+    /// </summary>
+    /// <param name="context"></param>
     public override void ChannelReadComplete(IChannelHandlerContext context)
     {
         context.Flush();
         base.ChannelReadComplete(context);
     }
 
+    /// <summary>
+    /// 客户端初次链接服务器
+    /// </summary>
+    /// <param name="context"></param>
     public override void ChannelActive(IChannelHandlerContext context)
     {
         // 为每个客户端分配唯一ID，可以基于连接信息或生成唯一ID
@@ -154,7 +141,7 @@ public class NetterServerHandler : ChannelHandlerAdapter
         if (Clients.ContainsKey(clientId))
         {
             Console.WriteLine(@$"Client {clientId} reconnected.");
-            _mainForm.UpdateConnectionStatus(clientId, "FirstConnect", "Reconnected");
+            mainForm.UpdateConnectionStatus(clientId, "FirstConnect", "Reconnected");
         }
         else
         {
@@ -165,15 +152,18 @@ public class NetterServerHandler : ChannelHandlerAdapter
                 Id = clientId,
             };
             Clients.TryAdd(clientId, model);
-            _mainForm.AddConnection(clientId, "FirstConnect", "Connected");
+            mainForm.AddConnection(clientId, "FirstConnect", "Connected");
         }
     }
 
+    /// <summary>
+    /// 客户端退出链接
+    /// </summary>
+    /// <param name="context"></param>
     public override void ChannelInactive(IChannelHandlerContext context)
     {
         Console.WriteLine(@$"{context.Name} + Client disconnected.");
 
-        // Handle disconnection and cleanup if needed
         // 移除客户端
         string clientIdToRemove = null;
         foreach (var kvp in Clients)
@@ -188,7 +178,7 @@ public class NetterServerHandler : ChannelHandlerAdapter
         if (clientIdToRemove != null)
         {
             // 在这里不立即移除客户端，而是将其标记为“掉线”并设定一个超时时间
-            _mainForm.UpdateConnectionStatus(clientIdToRemove, null, "Disconnected - Waiting for Reconnect");
+            mainForm.UpdateConnectionStatus(clientIdToRemove, null, "Disconnected - Waiting for Reconnect");
 
             // 使用一个延时任务处理超时
             Task.Delay(TimeSpan.FromSeconds(30)).ContinueWith(__ =>
@@ -199,7 +189,7 @@ public class NetterServerHandler : ChannelHandlerAdapter
                     if (!channel.Active) // 检查客户端是否在超时后仍然未重连
                     {
                         Clients.TryRemove(clientIdToRemove, out _);
-                        _mainForm.RemoveConnection(clientIdToRemove);
+                        mainForm.RemoveConnection(clientIdToRemove);
                         Console.WriteLine(@$"Client {clientIdToRemove} | {channel.RemoteAddress} | {serverModel.DeviceName} removed after timeout.");
                     }
                 }
@@ -207,6 +197,11 @@ public class NetterServerHandler : ChannelHandlerAdapter
         }
     }
 
+    /// <summary>
+    /// 错误处理
+    /// </summary>
+    /// <param name="context"></param>
+    /// <param name="exception"></param>
     public override void ExceptionCaught(IChannelHandlerContext context, Exception exception)
     {
         // 为每个客户端分配唯一ID，可以基于连接信息或生成唯一ID
@@ -216,8 +211,22 @@ public class NetterServerHandler : ChannelHandlerAdapter
         context.CloseAsync();
     }
 
-    public static async Task GetAllClient(string clientId)
+    #region Functional
+
+    /// <summary>
+    /// 获取所有客户端信息
+    /// </summary>
+    /// <param name="clientId"></param>
+    /// <returns></returns>
+    public static async Task GetAllClient(string? clientId)
     {
+        if (string.IsNullOrEmpty(clientId))
+        {
+            Console.WriteLine(@$"GetAllClient {clientId} is null or empty, fail to response");
+            return;
+        }
+
+        // Linq获取全部models
         var models = Clients.Values.Select(serverModel => new MessageModel()
         {
             Id = serverModel.Id,
@@ -226,134 +235,159 @@ public class NetterServerHandler : ChannelHandlerAdapter
             Message = serverModel.Message,
             Command = serverModel.Command,
             Target = serverModel.Target,
-        })
-            .ToList();
+        }).ToList();
 
-        if (Clients.TryGetValue(clientId, out var server))
+        // 获取需要发送的serverModel
+        var srvModel = Clients.GetServerModel(clientId);
+        if (srvModel == null)
         {
-            var channel = server.Channel;
-
-            await channel.WriteAndFlushAsync(models);
-
-            Console.WriteLine(@$"Get all client {models.Count}");
+            Console.WriteLine(@$"UpdateModel: Client with ID {clientId} not found.");
+            return;
         }
+
+        var channel = srvModel.Channel;
+        await channel.WriteAndFlushAsync(models);
+
+        Console.WriteLine(@$"GetAllClient {models.Count}");
     }
 
-    public async void SendMessageAndWaitResponseAsync(string clientId, string message, string myId)
+    /// <summary>
+    /// 定向发送信息并且等待目标回复
+    /// </summary>
+    /// <param name="clientId"></param>
+    /// <param name="message"></param>
+    /// <param name="myId"></param>
+    public async void SendMessageAndWaitResponseAsync(string? clientId, string? message, string? myId)
     {
-        // 创建一个新的TaskCompletionSource用于等待客户端响应
-        _responseTcs = new TaskCompletionSource<MessageModel>();
+        if (string.IsNullOrEmpty(clientId) || string.IsNullOrEmpty(message) || string.IsNullOrEmpty(myId))
+        {
+            Console.WriteLine(@$"SendMessageAndWaitResponseAsync: ID {clientId} is Empty");
+            return;
+        }
 
         // 发送消息
         await SendMessageToClient(clientId, message, myId);
 
-        //// 等待回传消息，设置超时时间为30秒
-        //var response = await Task.WhenAny(_responseTcs.Task, Task.Delay(TimeSpan.FromSeconds(30)));
-
         // 返回结果，注意，返回ID和目标ID需要替换一下
-        if (Clients.TryGetValue(myId, out var serverModel))
+        var srvModel = Clients.GetServerModel(clientId);
+        if (srvModel == null)
         {
-            var channel = serverModel.Channel;
-            if (channel.Open)
-            {
-                await channel.WriteAndFlushAsync(new MessageModel
-                {
-                    Id = myId,
-                    DeviceName = "",
-                    MessageType = "NoCallback",
-                    Message = message,
-                    Target = clientId,
-                    Command = "SendMessageToClient",
-                });
-            }
+            Console.WriteLine(@$"SendMessageAndWaitResponseAsync: Client with ID {clientId} not found.");
+            return;
         }
+
+        // 构造返回信息
+        var channel = srvModel.Channel;
+        if (channel.Open)
+        {
+            await channel.WriteAndFlushAsync(new MessageModel
+            {
+                Id = myId,
+                DeviceName = "",
+                MessageType = "NoCallback",
+                Message = message,
+                Target = clientId,
+                Command = "SendMessageToClient",
+            });
+        }
+
+        Console.WriteLine(@$"SendMessageAndWaitResponseAsync: Client {myId} send ({message}) to {clientId}");
     }
 
     /// <summary>
-    /// 发送消息给客户端
+    /// 修改本地存储的模型信息
     /// </summary>
-    /// <param name="clientId"></param>
-    /// <param name="message"></param>
+    /// <param name="clientId">自身通道id</param>
+    /// <param name="deviceName">设备名称</param>
+    /// <param name="message">消息</param>
     /// <returns></returns>
-    public async Task UpdateModel(string clientId, string deviceName, string message)
+    public Task UpdateModel(string clientId, string deviceName, string message)
     {
-        if (Clients.TryGetValue(clientId, out var serverModel))
+        var srvModel = Clients.GetServerModel(clientId);
+        if (srvModel == null)
         {
-            var channel = serverModel.Channel;
-            if (channel.Open)
-            {
-                serverModel.Id = clientId;
-                serverModel.MessageType = "Message";
-                serverModel.DeviceName = deviceName;
-                serverModel.Message = message;
-            }
+            Console.WriteLine(@$"UpdateModel: Client with ID {clientId} not found.");
+            return Task.CompletedTask;
         }
-        else
+
+        var channel = srvModel.Channel;
+        if (channel.Open)
         {
-            Console.WriteLine(@$"Client with ID {clientId} not found.");
+            srvModel.Id = clientId;
+            srvModel.MessageType = "Message";
+            srvModel.DeviceName = deviceName;
+            srvModel.Message = message;
         }
+
+        Console.WriteLine(@$"UpdateModel: ({clientId}) {deviceName} update {message}");
+
+        return Task.CompletedTask;
     }
 
     /// <summary>
-    /// 发送消息给客户端
+    /// 发送Callback消息给客户端
     /// </summary>
     /// <param name="clientId"></param>
     /// <param name="message"></param>
     /// <returns></returns>
     public static async Task SendCallBackMessageToClient(string clientId, string message)
     {
-        if (Clients.TryGetValue(clientId, out var serverModel))
+        var srvModel = Clients.GetServerModel(clientId);
+        if (srvModel == null)
         {
-            var channel = serverModel.Channel;
-            if (channel.Open)
+            Console.WriteLine(@$"SendCallBackMessageToClient: Client with ID {clientId} not found.");
+            return;
+        }
+
+        var channel = srvModel.Channel;
+        if (channel.Open)
+        {
+            var encodedMessage = Encoding.UTF8.GetBytes(message);
+            await channel.WriteAndFlushAsync(new MessageModel
             {
-                var encodedMessage = Encoding.UTF8.GetBytes(message);
-                await channel.WriteAndFlushAsync(new MessageModel
-                {
-                    Id = clientId,
-                    DeviceName = "",
-                    MessageType = "Callback",
-                    Message = message,
-                    Target = "",
-                    Command = "",
-                });
-            }
+                Id = clientId,
+                DeviceName = "",
+                MessageType = "Callback",
+                Message = message,
+                Target = "",
+                Command = "",
+            });
         }
-        else
-        {
-            Console.WriteLine(@$"Client with ID {clientId} not found.");
-        }
+
+        Console.WriteLine(@$"SendCallBackMessageToClient: send ({message}) to {clientId}");
     }
 
     /// <summary>
     /// 发送消息给客户端
     /// </summary>
-    /// <param name="clientId"></param>
-    /// <param name="message"></param>
+    /// <param name="clientId">发起者通道id</param>
+    /// <param name="message">信息内容</param>
+    /// <param name="fromId">接收者通道id</param>
     /// <returns></returns>
     public static async Task SendMessageToClient(string clientId, string message, string fromId)
     {
-        if (Clients.TryGetValue(clientId, out var serverModel))
+        var srvModel = Clients.GetServerModel(clientId);
+        if (srvModel == null)
         {
-            var channel = serverModel.Channel;
-            if (channel.Open)
+            Console.WriteLine(@$"SendMessageToClient: Client with ID {clientId} not found.");
+            return;
+        }
+
+        var channel = srvModel.Channel;
+        if (channel.Open)
+        {
+            await channel.WriteAndFlushAsync(new MessageModel
             {
-                var encodedMessage = Encoding.UTF8.GetBytes(message);
-                await channel.WriteAndFlushAsync(new MessageModel
-                {
-                    Id = clientId,
-                    DeviceName = "",
-                    MessageType = "Message",
-                    Message = message,
-                    Target = fromId,
-                    Command = "",
-                });
-            }
+                Id = clientId,
+                DeviceName = "",
+                MessageType = "Message",
+                Message = message,
+                Target = fromId,
+                Command = "",
+            });
         }
-        else
-        {
-            Console.WriteLine(@$"Client with ID {clientId} not found.");
-        }
+
+        Console.WriteLine(@$"SendMessageToClient: Client {fromId} send ({message}) to {clientId}");
     }
 
     /// <summary>
@@ -361,13 +395,17 @@ public class NetterServerHandler : ChannelHandlerAdapter
     /// </summary>
     /// <param name="message"></param>
     /// <returns></returns>
-    public static async Task BroadcastMessage(string message)
+    public static async Task BroadcastMessage(string? message)
     {
-        var encodedMessage = Encoding.UTF8.GetBytes(message);
-
-        foreach (var serverModel in Clients.Values)
+        if (string.IsNullOrEmpty(message))
         {
-            var channel = serverModel.Channel;
+            Console.WriteLine(@$"BroadcastMessage: message {message} is empty or null");
+            return;
+        }
+
+        foreach (var srvModel in Clients.Values)
+        {
+            var channel = srvModel.Channel;
             if (channel.Open)
             {
                 await channel.WriteAndFlushAsync(new MessageModel
@@ -381,7 +419,11 @@ public class NetterServerHandler : ChannelHandlerAdapter
                 });
             }
         }
+
+        Console.WriteLine(@$"BroadcastMessage: send {message} to all client({Clients.Count})");
     }
+
+    #endregion
 
     /// <summary>
     /// 心跳包任务：定期向所有活跃的客户端发送心跳包
@@ -397,19 +439,22 @@ public class NetterServerHandler : ChannelHandlerAdapter
 
                 foreach (var kvp in LastHeartbeat)
                 {
-                    string clientId = kvp.Key;
-                    DateTime lastHeartbeatTime = kvp.Value;
+                    var clientId = kvp.Key;
+                    var lastHeartbeatTime = kvp.Value;
 
-                    if (DateTime.Now - lastHeartbeatTime > TimeSpan.FromSeconds(30)) // 设定30秒为超时
+                    if (DateTime.Now - lastHeartbeatTime <= TimeSpan.FromSeconds(30))
                     {
-                        Console.WriteLine(@$"Client {clientId} is disconnected due to heartbeat timeout.");
-                        // 标记为掉线
-                        _mainForm.UpdateConnectionStatus(clientId, null, "Disconnected - Timeout");
+                        continue; // 设定30秒为超时
+                    }
 
-                        if (Clients.TryRemove(clientId, out _))
-                        {
-                            _mainForm.RemoveConnection(clientId);
-                        }
+                    Console.WriteLine(@$"Client {clientId} is disconnected due to heartbeat timeout.");
+
+                    // 标记为掉线
+                    mainForm.UpdateConnectionStatus(clientId, null, "Disconnected - Timeout");
+
+                    if (Clients.TryRemove(clientId, out _))
+                    {
+                        mainForm.RemoveConnection(clientId);
                     }
                 }
             }

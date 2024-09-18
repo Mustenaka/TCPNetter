@@ -122,7 +122,7 @@
             // CBox_Command
             // 
             CBox_Command.FormattingEnabled = true;
-            CBox_Command.Items.AddRange(new object[] { "Broadcast", "SendMessageToClient", "GetAll", "GetMyHistory", "GetHistory" });
+            CBox_Command.Items.AddRange(new object[] { "Broadcast", "SendMessageById", "SendMessageByName", "GetAll", "GetMyHistory", "GetHistory" });
             CBox_Command.Location = new Point(286, 40);
             CBox_Command.Name = "CBox_Command";
             CBox_Command.Size = new Size(210, 32);

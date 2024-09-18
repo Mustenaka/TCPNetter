@@ -22,7 +22,6 @@
   <ItemGroup>
     <Folder Include="GUI\Command\" />
     <Folder Include="Server\Params\" />
-    <Folder Include="Tools\" />
   </ItemGroup>
 
 </Project>

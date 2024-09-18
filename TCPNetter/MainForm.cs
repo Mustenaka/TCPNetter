@@ -69,7 +69,7 @@ namespace TCPNetter
 
                                         var resopn = new MessageModel()
                                         {
-                                            MessageType = "NoCallback",
+                                            MessageType = "Callback",
                                             Message = model.Message,
                                             DeviceName = _localModel.DeviceName,
                                             Target = model.Target,
