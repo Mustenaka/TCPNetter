@@ -10,6 +10,8 @@ namespace TCPNetter
         private SynchronizationContext _syncContext;
 
         private MessageModel _localModel;
+        private bool _isReconnecting = false;
+        private bool _isConnecting = false;
 
         public MainForm()
         {
@@ -36,11 +38,76 @@ namespace TCPNetter
                 _syncContext = SynchronizationContext.Current;
                 StartSendingHeartbeats();
                 StartReceivingMessages();
+
+                _isConnecting = true;
             }
             catch (Exception err)
             {
-                Console.WriteLine(err.Message);
+                Console.WriteLine($"Connection failed: {err.Message}");
+                StartReconnection();  // 开始断线重连
             }
+        }
+
+        /// <summary>
+        /// 断线重连机制
+        /// </summary>
+        private void StartReconnection()
+        {
+            // 正在连接着不需要进入断线重连
+            if (_isConnecting)
+            {
+                return;
+            }
+
+            if (_isReconnecting)
+            {
+                return;  // 防止多个重连任务同时执行
+            }
+
+            _isReconnecting = true;
+
+            Task.Run(async () =>
+            {
+                while (true)
+                {
+                    // 正在连接着不需要进入断线重连
+                    if (_isConnecting)
+                    {
+                        return;
+                    }
+
+                    Console.WriteLine("Attempting to reconnect...");
+                    try
+                    {
+                        if (_client.IsServerCloese())
+                        {
+                            _client = new();
+                        }
+                        await _client.ConnectAsync("127.0.0.1", 8188);  // 尝试重新连接
+
+                        // 通过 UI 线程重新获取 SynchronizationContext
+                        this.Invoke((MethodInvoker)delegate
+                        {
+                            _syncContext = SynchronizationContext.Current;
+                        });
+
+                        _isReconnecting = false;
+                        StartSendingHeartbeats();  // 重启心跳包
+                        StartReceivingMessages();  // 重启接收消息
+                        _isConnecting = true;
+
+                        Console.WriteLine("Reconnected successfully!");
+                        break;  // 成功重连后退出重连循环
+                    }
+                    catch (Exception)
+                    {
+                        Console.WriteLine("Reconnection failed. Retrying in 10 seconds...");
+                        _isConnecting = false;
+                    }
+
+                    await Task.Delay(TimeSpan.FromSeconds(10));  // 每10秒重试一次
+                }
+            });
         }
 
         /// <summary>
@@ -65,9 +132,13 @@ namespace TCPNetter
                                 switch (model.MessageType)
                                 {
                                     case "Message": // 接受的消息是Message，需要改变自身
-                                        TBox_Input.Text = model.Message;
+                                        // 更新UI
+                                        _syncContext.Post(_ =>
+                                        {
+                                            TBox_Input.Text = model.Message;
+                                        }, null);
 
-                                        var resopn = new MessageModel()
+                                        var response = new MessageModel()
                                         {
                                             MessageType = "Callback",
                                             Message = model.Message,
@@ -75,15 +146,16 @@ namespace TCPNetter
                                             Target = model.Target,
                                         };
 
-                                        await _client.SendMessageAsync(resopn);
-
+                                        await _client.SendMessageAsync(response);
                                         break;
                                 }
+
                                 // 更新UI
                                 _syncContext.Post(_ =>
                                 {
                                     TBox_Result.Text += (model.MessageType + "|" + model.Target + "|" + model.DeviceName + " | " + model.Message + "\u000D\u000A");
                                 }, null);
+                                //TBox_Result.Text += (model.MessageType + "|" + model.Target + "|" + model.DeviceName + " | " + model.Message + "\u000D\u000A");
                             }
                         }
                         else if (obj is List<MessageModel> list)
@@ -95,6 +167,8 @@ namespace TCPNetter
                                 {
                                     TBox_Result.Text += (mod.Id + " | " + mod.DeviceName + " | " + mod.Message + "\u000D\u000A");
                                 }, null);
+
+                                //TBox_Result.Text += (mod.Id + " | " + mod.DeviceName + " | " + mod.Message + "\u000D\u000A");
                             }
                         }
 
@@ -102,10 +176,14 @@ namespace TCPNetter
                 }
                 catch (Exception ex)
                 {
-                    _syncContext.Post(_ =>
-                    {
-                        MessageBox.Show($"Error receiving messages: {ex.Message}");
-                    }, null);
+                    //_syncContext.Post(_ =>
+                    //{
+                    //    MessageBox.Show($"Error receiving messages: {ex.Message}");
+                    //}, null);
+
+                    Console.WriteLine($"Error receiving messages: {ex.Message}");
+                    _isConnecting = false;
+                    StartReconnection();  // 当接收消息发生错误时，开始重连
                 }
             }, cancellationToken);
         }
@@ -131,7 +209,18 @@ namespace TCPNetter
                         Message = "Ping!"  // 心跳包的内容随便一点
                     };
 
-                    await _client.SendMessageAsync(heartbeatModel);
+                    try
+                    {
+                        await _client.SendMessageAsync(heartbeatModel);
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"Error sending heartbeat: {ex.Message}");
+                        _isConnecting = false;
+                        StartReconnection();  // 当心跳发送失败时，开始重连
+                        break;
+                    }
+
                     await Task.Delay(heartbeatInterval);  // 等待下一个心跳时间
                 }
             }, cancellationToken);
@@ -165,4 +254,5 @@ namespace TCPNetter
 
         }
     }
+
 }

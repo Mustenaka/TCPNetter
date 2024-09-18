@@ -16,6 +16,34 @@ public class Client
         _client = new TcpClient();
     }
 
+    public bool IsServerCloese()
+    {
+        try
+        {
+            if (_client == null || !_client.Connected)
+            {
+                return true;  // 如果 TcpClient 不存在或未连接，返回 true 表示服务器关闭
+            }
+
+            // 检查网络流的状态，通过发送一个空字节数组来检测是否断开
+            if (_client.Client.Poll(0, SelectMode.SelectRead))
+            {
+                // 如果有数据可读但返回 0，说明连接已经断开
+                byte[] buffer = new byte[1];
+                if (_client.Client.Receive(buffer, SocketFlags.Peek) == 0)
+                {
+                    return true; // 返回 true，表示连接已断开
+                }
+            }
+
+            return false; // 返回 false，表示服务器还在
+        }
+        catch (SocketException)
+        {
+            return true;  // 捕获异常，返回 true 表示连接断开
+        }
+    }
+
     public async Task ConnectAsync(string ip, int port)
     {
         await _client.ConnectAsync(ip, port);
@@ -47,149 +75,83 @@ public class Client
 
     public async Task SendMessageAsync(MessageModel messageModel)
     {
-        try
+        if (_stream == null)
         {
-            if (_stream == null)
-            {
-                return;
-            }
-
-            // Serialize the MessageModel to JSON using System.Text.Json
-            var jsonMessage = JsonSerializer.Serialize(messageModel);
-
-            // Convert the JSON string to bytes and append a newline
-            byte[] buffer = Encoding.UTF8.GetBytes(jsonMessage + "\n");
-
-            // Send the message
-            await _stream.WriteAsync(buffer, 0, buffer.Length);
-            Console.WriteLine(@$"Message sent: {jsonMessage}");
-        }catch (Exception err)
-        {
-            Console.WriteLine(err.Message);
+            return;
         }
+
+        // Serialize the MessageModel to JSON using System.Text.Json
+        var jsonMessage = JsonSerializer.Serialize(messageModel);
+
+        // Convert the JSON string to bytes and append a newline
+        byte[] buffer = Encoding.UTF8.GetBytes(jsonMessage + "\n");
+
+        // Send the message
+        await _stream.WriteAsync(buffer, 0, buffer.Length);
+        Console.WriteLine(@$"Message sent: {jsonMessage}");
     }
-
-    //public async Task<MessageModel?> ReceiveMessageAsync()
-    //{
-    //    try
-    //    {
-    //        if (_stream == null)
-    //        {
-    //            return null;
-    //        }
-
-    //        byte[] buffer = new byte[1024]; // 缓冲区
-    //        int bytesRead;
-
-    //        while ((bytesRead = await _stream.ReadAsync(buffer, 0, buffer.Length)) > 0)
-    //        {
-    //            // 将收到的数据转换为字符串并添加到消息缓冲区中
-    //            _messageBuffer.Append(Encoding.UTF8.GetString(buffer, 0, bytesRead));
-
-    //            // 处理消息，直到找到一个完整的JSON消息（由换行符\n结束）
-    //            while (true)
-    //            {
-    //                string? message = ExtractMessage();
-    //                if (message == null)
-    //                    break;
-
-    //                try
-    //                {
-    //                    var receivedModel = JsonSerializer.Deserialize<MessageModel>(message);
-    //                    if (receivedModel != null)
-    //                    {
-    //                        Console.WriteLine(
-    //                            @$"Received from server: MessageType={receivedModel.MessageType}, Message={receivedModel.Message}");
-    //                    }
-
-    //                    return receivedModel;
-    //                }
-    //                catch (JsonException ex)
-    //                {
-    //                    Console.WriteLine(@$"Error deserializing response: {ex.Message}");
-    //                    Console.WriteLine(@"Raw response: " + message);
-    //                }
-    //            }
-    //        }
-
-    //        return null;
-    //    }
-    //    catch (Exception err)
-    //    {
-    //        Console.WriteLine(err.Message);
-    //        return null;
-    //    }
-    //}
 
     public async Task<object?> ReceiveMessageAsync()
     {
-        try
+        if (_stream == null)
         {
-            if (_stream == null)
+            return null;
+        }
+
+        byte[] buffer = new byte[1024]; // 缓冲区
+        int bytesRead;
+
+        while ((bytesRead = await _stream.ReadAsync(buffer, 0, buffer.Length)) > 0)
+        {
+            // 将收到的数据转换为字符串并添加到消息缓冲区中
+            _messageBuffer.Append(Encoding.UTF8.GetString(buffer, 0, bytesRead));
+
+            // 处理消息，直到找到一个完整的JSON消息（由换行符\n结束）
+            while (true)
             {
-                return null;
-            }
+                string? message = ExtractMessage();
+                if (message == null)
+                    break;
 
-            byte[] buffer = new byte[1024]; // 缓冲区
-            int bytesRead;
-
-            while ((bytesRead = await _stream.ReadAsync(buffer, 0, buffer.Length)) > 0)
-            {
-                // 将收到的数据转换为字符串并添加到消息缓冲区中
-                _messageBuffer.Append(Encoding.UTF8.GetString(buffer, 0, bytesRead));
-
-                // 处理消息，直到找到一个完整的JSON消息（由换行符\n结束）
-                while (true)
+                try
                 {
-                    string? message = ExtractMessage();
-                    if (message == null)
-                        break;
-
+                    // 先尝试反序列化为单个MessageModel
+                    var receivedModel = JsonSerializer.Deserialize<MessageModel>(message);
+                    if (receivedModel != null)
+                    {
+                        Console.WriteLine(
+                            @$"Received from server: MessageType={receivedModel.MessageType}, Message={receivedModel.Message}");
+                        return receivedModel;
+                    }
+                }
+                catch (JsonException)
+                {
+                    // 如果反序列化为MessageModel失败，尝试反序列化为List<MessageModel>
                     try
                     {
-                        // 先尝试反序列化为单个MessageModel
-                        var receivedModel = JsonSerializer.Deserialize<MessageModel>(message);
-                        if (receivedModel != null)
+                        var receivedModelList = JsonSerializer.Deserialize<List<MessageModel>>(message);
+                        if (receivedModelList != null)
                         {
-                            Console.WriteLine(
-                                @$"Received from server: MessageType={receivedModel.MessageType}, Message={receivedModel.Message}");
-                            return receivedModel;
+                            Console.WriteLine(@$"Received a list of {receivedModelList.Count} messages from server.");
+                            foreach (var model in receivedModelList)
+                            {
+                                Console.WriteLine(
+                                    @$"Received from server: MessageType={model.MessageType}, Message={model.Message}");
+                            }
+                            return receivedModelList;
                         }
                     }
-                    catch (JsonException)
+                    catch (JsonException ex)
                     {
-                        // 如果反序列化为MessageModel失败，尝试反序列化为List<MessageModel>
-                        try
-                        {
-                            var receivedModelList = JsonSerializer.Deserialize<List<MessageModel>>(message);
-                            if (receivedModelList != null)
-                            {
-                                Console.WriteLine(@$"Received a list of {receivedModelList.Count} messages from server.");
-                                foreach (var model in receivedModelList)
-                                {
-                                    Console.WriteLine(
-                                        @$"Received from server: MessageType={model.MessageType}, Message={model.Message}");
-                                }
-                                return receivedModelList;
-                            }
-                        }
-                        catch (JsonException ex)
-                        {
-                            // 如果两种反序列化都失败，捕获异常并打印错误信息
-                            Console.WriteLine(@$"Error deserializing response: {ex.Message}");
-                            Console.WriteLine(@"Raw response: " + message);
-                        }
+                        // 如果两种反序列化都失败，捕获异常并打印错误信息
+                        Console.WriteLine(@$"Error deserializing response: {ex.Message}");
+                        Console.WriteLine(@"Raw response: " + message);
                     }
                 }
             }
+        }
 
-            return null;
-        }
-        catch (Exception err)
-        {
-            Console.WriteLine(err.Message);
-            return null;
-        }
+        return null;
     }
 
     private string? ExtractMessage()
