@@ -14,4 +14,8 @@
     <Folder Include="ViewModel\" />
   </ItemGroup>
 
+  <ItemGroup>
+    <PackageReference Include="antdui" Version="1.6.1" />
+  </ItemGroup>
+
 </Project>

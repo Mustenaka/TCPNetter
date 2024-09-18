@@ -1,6 +1,7 @@
 using TCPNetterServerGUI.GUI.Model;
 using TCPNetterServerGUI.GUI.ViewModel;
 using TCPNetterServerGUI.Server;
+using TCPNetterServerGUI.Server.Handler;
 
 namespace TCPNetterServerGUI
 {
@@ -20,17 +21,17 @@ namespace TCPNetterServerGUI
 
         private void StartServer()
         {
-            run = new RunSrv(this);
-            run.StartServerAsync(8188);
+            run = new RunSrv(this); 
+            run.Start();
         }
 
         private void Bind()
         {
             vm = new UIViewModel();
 
-            Table_Device.Columns = new ()
+            Table_Device.Columns = new()
             {
-                new AntdUI.Column(nameof(UIModel.Id), "ID"),
+                new AntdUI.Column(nameof(UIModel.Id), "通信ID"),
                 new AntdUI.Column(nameof(UIModel.DeviceName), "设备名称"),
                 new AntdUI.Column(nameof(UIModel.Message), "消息"),
             };
@@ -40,14 +41,36 @@ namespace TCPNetterServerGUI
 
         #region Event
 
+        /// <summary>
+        /// 主动给Netter发送消息 | 案例，可以自主修改
+        /// </summary>
+        /// <param name="sender"></param>
+        /// <param name="e"></param>
         private void Btn_Send_Click(object sender, EventArgs e)
         {
+            var message = Inp_SendMessage.Text;
 
+            // 一对一的发送全部消息
+            foreach (var model in vm.UIModels)
+            {
+                NetterServerHandler.SendMessageToClient(model.Id, message, "");
+
+                var sendMessage = $@"发送Message类型数据给{model.Id},内容:{message}\n";
+                TBox_Console.Text += sendMessage;
+            }
+
+            // 直接用广播功能发送消息
+            //NetterServerHandler.BroadcastMessage(message);
         }
 
+        /// <summary>
+        /// 清空输出按钮
+        /// </summary>
+        /// <param name="sender"></param>
+        /// <param name="e"></param>
         private void Btn_Clean_Click(object sender, EventArgs e)
         {
-
+            TBox_Console.Text = string.Empty;
         }
 
         #endregion
@@ -74,5 +97,10 @@ namespace TCPNetterServerGUI
         }
 
         #endregion
+
+        private async void MainForm_FormClosing(object sender, FormClosingEventArgs e)
+        {
+            //await run.StopServerAsync();
+        }
     }
 }

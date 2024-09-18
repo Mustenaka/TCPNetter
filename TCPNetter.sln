@@ -9,7 +9,7 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "TCPNetterServer", "TCPNette
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "TCPNetterControler", "TCPNetterControler\TCPNetterControler.csproj", "{CCE40823-3B96-4674-A2DF-CB4A6AB1D10B}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TCPNetterServerGUI", "TCPNetterServerGUI\TCPNetterServerGUI.csproj", "{CE452B31-B4E8-4F3F-A8AF-CFE8671CD2C5}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "TCPNetterServerGUI", "TCPNetterServerGUI\TCPNetterServerGUI.csproj", "{CE452B31-B4E8-4F3F-A8AF-CFE8671CD2C5}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

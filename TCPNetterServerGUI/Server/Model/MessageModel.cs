@@ -25,4 +25,14 @@ public class MessageModel
     /// 数据信息
     /// </summary>
     public string? Message { get; set; }
+
+    /// <summary>
+    /// 命令内容，用于处理Commad指令。结合 MessageType 为 Command 时
+    /// </summary>
+    public string? Command { get; set; }
+
+    /// <summary>
+    /// 用于指向服务。结合 MessageType 为 Command 时
+    /// </summary>
+    public string? Target { get; set; }
 }

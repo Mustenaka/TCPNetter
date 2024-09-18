@@ -69,7 +69,59 @@ public class Client
         }
     }
 
-    public async Task<MessageModel?> ReceiveMessageAsync()
+    //public async Task<MessageModel?> ReceiveMessageAsync()
+    //{
+    //    try
+    //    {
+    //        if (_stream == null)
+    //        {
+    //            return null;
+    //        }
+
+    //        byte[] buffer = new byte[1024]; // 缓冲区
+    //        int bytesRead;
+
+    //        while ((bytesRead = await _stream.ReadAsync(buffer, 0, buffer.Length)) > 0)
+    //        {
+    //            // 将收到的数据转换为字符串并添加到消息缓冲区中
+    //            _messageBuffer.Append(Encoding.UTF8.GetString(buffer, 0, bytesRead));
+
+    //            // 处理消息，直到找到一个完整的JSON消息（由换行符\n结束）
+    //            while (true)
+    //            {
+    //                string? message = ExtractMessage();
+    //                if (message == null)
+    //                    break;
+
+    //                try
+    //                {
+    //                    var receivedModel = JsonSerializer.Deserialize<MessageModel>(message);
+    //                    if (receivedModel != null)
+    //                    {
+    //                        Console.WriteLine(
+    //                            @$"Received from server: MessageType={receivedModel.MessageType}, Message={receivedModel.Message}");
+    //                    }
+
+    //                    return receivedModel;
+    //                }
+    //                catch (JsonException ex)
+    //                {
+    //                    Console.WriteLine(@$"Error deserializing response: {ex.Message}");
+    //                    Console.WriteLine(@"Raw response: " + message);
+    //                }
+    //            }
+    //        }
+
+    //        return null;
+    //    }
+    //    catch (Exception err)
+    //    {
+    //        Console.WriteLine(err.Message);
+    //        return null;
+    //    }
+    //}
+
+    public async Task<object?> ReceiveMessageAsync()
     {
         try
         {
@@ -95,19 +147,38 @@ public class Client
 
                     try
                     {
+                        // 先尝试反序列化为单个MessageModel
                         var receivedModel = JsonSerializer.Deserialize<MessageModel>(message);
                         if (receivedModel != null)
                         {
                             Console.WriteLine(
                                 @$"Received from server: MessageType={receivedModel.MessageType}, Message={receivedModel.Message}");
+                            return receivedModel;
                         }
-
-                        return receivedModel;
                     }
-                    catch (JsonException ex)
+                    catch (JsonException)
                     {
-                        Console.WriteLine(@$"Error deserializing response: {ex.Message}");
-                        Console.WriteLine(@"Raw response: " + message);
+                        // 如果反序列化为MessageModel失败，尝试反序列化为List<MessageModel>
+                        try
+                        {
+                            var receivedModelList = JsonSerializer.Deserialize<List<MessageModel>>(message);
+                            if (receivedModelList != null)
+                            {
+                                Console.WriteLine(@$"Received a list of {receivedModelList.Count} messages from server.");
+                                foreach (var model in receivedModelList)
+                                {
+                                    Console.WriteLine(
+                                        @$"Received from server: MessageType={model.MessageType}, Message={model.Message}");
+                                }
+                                return receivedModelList;
+                            }
+                        }
+                        catch (JsonException ex)
+                        {
+                            // 如果两种反序列化都失败，捕获异常并打印错误信息
+                            Console.WriteLine(@$"Error deserializing response: {ex.Message}");
+                            Console.WriteLine(@"Raw response: " + message);
+                        }
                     }
                 }
             }

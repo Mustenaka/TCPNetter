@@ -31,12 +31,12 @@
             splitContainer1 = new SplitContainer();
             Table_Device = new AntdUI.Table();
             SPanel_Controller = new AntdUI.StackPanel();
-            textBox1 = new TextBox();
+            TBox_Console = new TextBox();
             Btn_Clean = new AntdUI.Button();
             label2 = new AntdUI.Label();
             panel1 = new AntdUI.Panel();
             Btn_Send = new AntdUI.Button();
-            input1 = new AntdUI.Input();
+            Inp_SendMessage = new AntdUI.Input();
             label1 = new AntdUI.Label();
             ((System.ComponentModel.ISupportInitialize)splitContainer1).BeginInit();
             splitContainer1.Panel1.SuspendLayout();
@@ -74,7 +74,7 @@
             // 
             // SPanel_Controller
             // 
-            SPanel_Controller.Controls.Add(textBox1);
+            SPanel_Controller.Controls.Add(TBox_Console);
             SPanel_Controller.Controls.Add(Btn_Clean);
             SPanel_Controller.Controls.Add(label2);
             SPanel_Controller.Controls.Add(panel1);
@@ -87,14 +87,14 @@
             SPanel_Controller.Text = "stackPanel1";
             SPanel_Controller.Vertical = true;
             // 
-            // textBox1
+            // TBox_Console
             // 
-            textBox1.Dock = DockStyle.Fill;
-            textBox1.Location = new Point(3, 313);
-            textBox1.Multiline = true;
-            textBox1.Name = "textBox1";
-            textBox1.Size = new Size(482, 726);
-            textBox1.TabIndex = 4;
+            TBox_Console.Dock = DockStyle.Fill;
+            TBox_Console.Location = new Point(3, 313);
+            TBox_Console.Multiline = true;
+            TBox_Console.Name = "TBox_Console";
+            TBox_Console.Size = new Size(482, 726);
+            TBox_Console.TabIndex = 4;
             // 
             // Btn_Clean
             // 
@@ -116,7 +116,7 @@
             // panel1
             // 
             panel1.Controls.Add(Btn_Send);
-            panel1.Controls.Add(input1);
+            panel1.Controls.Add(Inp_SendMessage);
             panel1.Location = new Point(3, 76);
             panel1.Name = "panel1";
             panel1.Size = new Size(482, 79);
@@ -133,14 +133,14 @@
             Btn_Send.Text = "发送";
             Btn_Send.Click += Btn_Send_Click;
             // 
-            // input1
+            // Inp_SendMessage
             // 
-            input1.Dock = DockStyle.Left;
-            input1.Location = new Point(0, 0);
-            input1.Name = "input1";
-            input1.Size = new Size(243, 79);
-            input1.TabIndex = 0;
-            input1.Text = "信息内容";
+            Inp_SendMessage.Dock = DockStyle.Left;
+            Inp_SendMessage.Location = new Point(0, 0);
+            Inp_SendMessage.Name = "Inp_SendMessage";
+            Inp_SendMessage.Size = new Size(243, 79);
+            Inp_SendMessage.TabIndex = 0;
+            Inp_SendMessage.Text = "信息内容";
             // 
             // label1
             // 
@@ -159,6 +159,7 @@
             Controls.Add(splitContainer1);
             Name = "MainForm";
             Text = "TCPNetter服务端口";
+            FormClosing += MainForm_FormClosing;
             splitContainer1.Panel1.ResumeLayout(false);
             splitContainer1.Panel2.ResumeLayout(false);
             ((System.ComponentModel.ISupportInitialize)splitContainer1).EndInit();
@@ -177,9 +178,9 @@
         private AntdUI.Label label1;
         private AntdUI.Panel panel1;
         private AntdUI.Button Btn_Send;
-        private AntdUI.Input input1;
+        private AntdUI.Input Inp_SendMessage;
         private AntdUI.Label label2;
         private AntdUI.Button Btn_Clean;
-        private TextBox textBox1;
+        private TextBox TBox_Console;
     }
 }
