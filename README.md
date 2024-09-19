@@ -18,13 +18,13 @@
 
 左侧为设备信息列表，右侧为操作区域，可以发送消息
 
-![server](Pic\server.png)
+![server](Pic//server.png)
 
 ##### 客户端侧
 
 上区域为命令选择和交互区域，下半部分为界面
 
-![client](Pic\client.png)
+![client](Pic//client.png)
 
 ### 数据格式
 
