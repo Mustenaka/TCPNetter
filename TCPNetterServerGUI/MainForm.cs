@@ -55,7 +55,7 @@ namespace TCPNetterServerGUI
             {
                 NetterServerHandler.SendMessageToClient(model.Id, message, "");
 
-                var sendMessage = $@"发送Message类型数据给{model.Id},内容:{message}\n";
+                var sendMessage = $@"发送Message类型数据给{model.Id},内容:{message}" + "\u000D\u000A";   // 换行符
                 TBox_Console.Text += sendMessage;
             }
 
