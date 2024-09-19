@@ -8,6 +8,7 @@ namespace TCPNetterServerGUI.Server.Handler;
 
 public class NetterServerHandler(MainForm mainForm) : ChannelHandlerAdapter
 {
+    private static readonly ConcurrentDictionary<string, List<SaveModel>> Historys = new ConcurrentDictionary<string, List<SaveModel>>();
     private static readonly ConcurrentDictionary<string, ServerModel> Clients = new ConcurrentDictionary<string, ServerModel>();
     private static readonly ConcurrentDictionary<string, DateTime> LastHeartbeat = new ConcurrentDictionary<string, DateTime>();
 
@@ -71,8 +72,14 @@ public class NetterServerHandler(MainForm mainForm) : ChannelHandlerAdapter
                         NetterServerHandler.GetAllClient(channelId).Wait();
                         break;
                     case "GetMyHistory":  // 根据自身获取历史记录
+                        var deviceName = GetDeviceNameByChannelId(channelId);
+                        var myLogs = GetAllHistoryByDeviceName(deviceName);
+                        context.Channel.WriteAndFlushAsync(myLogs);
                         break;
                     case "GetHistory":  // 根据ID获取历史记录
+                        var targetDeviceName = GetDeviceNameByChannelId(message.Target);
+                        var targetLogs = GetAllHistoryByDeviceName(targetDeviceName);
+                        context.Channel.WriteAndFlushAsync(targetLogs);
                         break;
                 }
                 break;
@@ -82,6 +89,8 @@ public class NetterServerHandler(MainForm mainForm) : ChannelHandlerAdapter
                 mainForm.UpdateConnectionStatus(channelId!, message.DeviceName!, message.Message!);
                 // 更新对应Model
                 UpdateModel(channelId, message.DeviceName, message.Message);
+                // 添加历史记录
+                AddHistory(channelId, message.DeviceName, message.Message);
                 // 返回信息 - 不再需要客户端返回
                 context.WriteAndFlushAsync(new MessageModel
                 {
@@ -301,8 +310,14 @@ public class NetterServerHandler(MainForm mainForm) : ChannelHandlerAdapter
     /// <param name="deviceName">设备名称</param>
     /// <param name="message">消息</param>
     /// <returns></returns>
-    public Task UpdateModel(string clientId, string deviceName, string message)
+    public Task UpdateModel(string? clientId, string? deviceName, string? message)
     {
+        if (string.IsNullOrEmpty(clientId) || string.IsNullOrEmpty(deviceName) || string.IsNullOrEmpty(message))
+        {
+            Console.WriteLine(@$"UpdateModel: {deviceName} with {clientId} and {message} is null or empty)");
+            return Task.CompletedTask;
+        }
+
         var srvModel = Clients.GetServerModel(clientId);
         if (srvModel == null)
         {
@@ -459,5 +474,94 @@ public class NetterServerHandler(MainForm mainForm) : ChannelHandlerAdapter
                 }
             }
         });
+    }
+
+    /// <summary>
+    /// 添加Message日志
+    /// </summary>
+    /// <param name="channelId">通道ID</param>
+    /// <param name="deviceName">设备名称（这个是唯一主键）</param>
+    /// <param name="message">消息</param>
+    public void AddHistory(string? channelId, string? deviceName, string? message)
+    {
+        // 提前检查
+        if (string.IsNullOrEmpty(channelId) || string.IsNullOrEmpty(deviceName) || string.IsNullOrEmpty(message))
+        {
+            Console.WriteLine(@$"AddMessageLog: {deviceName} with {channelId} is null or empty)");
+            return;
+        }
+
+        // 根据channelId获取对应的serverModel
+        var srvModel = Clients.GetServerModel(channelId);
+        if (srvModel == null)
+        {
+            Console.WriteLine(@$"AddMessageLog: Client with ID {channelId} not found.");
+            return;
+        }
+
+        // 生成日志
+        var log = new SaveModel
+        {
+            DeviceName = deviceName,
+            Id = channelId,
+            Message = message,
+            Datetime = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"),
+        };
+
+        // 保存日志
+        if (Historys.TryGetValue(deviceName, out var logs))
+        {
+            logs.Add(log);
+        }
+        else
+        {
+            Historys.TryAdd(deviceName, new List<SaveModel> { log });
+        }
+    }
+
+    /// <summary>
+    /// 根据设备名称获取全部历史记录
+    /// </summary>
+    /// <returns></returns>
+    public List<SaveModel> GetAllHistoryByDeviceName(string? deviceName)
+    {
+        // 提前检查
+        if (string.IsNullOrEmpty(deviceName))
+        {
+            Console.WriteLine(@$"GetAllHistoryByDeviceName: {deviceName} is null or empty)");
+            return new List<SaveModel>();
+        }
+
+        // 拿到全部logs
+        if (Historys.TryGetValue(deviceName, out var logs))
+        {
+            return logs;
+        }
+
+        return new List<SaveModel>();   // 如果没有数据这个就是一个纯空的list
+    }
+
+    /// <summary>
+    /// 通过通道ID获取设备名称
+    /// </summary>
+    /// <param name="channelId"></param>
+    /// <returns></returns>
+    public string? GetDeviceNameByChannelId(string? channelId)
+    {
+        if (string.IsNullOrEmpty(channelId))
+        {
+            Console.WriteLine(@$"GetDeviceNameByChannelId: {channelId} is null or empty)");
+            return "";
+        }
+
+        // 根据channelId获取对应的serverModel
+        var srvModel = Clients.GetServerModel(channelId);
+        if (srvModel == null)
+        {
+            Console.WriteLine(@$"AddMessageLog: Client with ID {channelId} not found.");
+            return "";
+        }
+
+        return srvModel.DeviceName;
     }
 }

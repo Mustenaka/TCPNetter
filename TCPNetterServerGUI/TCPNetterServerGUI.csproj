@@ -22,6 +22,7 @@
   <ItemGroup>
     <Folder Include="GUI\Command\" />
     <Folder Include="Server\Params\" />
+    <Folder Include="Server\Save\" />
   </ItemGroup>
 
 </Project>
