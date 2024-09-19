@@ -1,5 +1,6 @@
 ﻿using System.Collections.Concurrent;
 using System.Text;
+using System.Threading.Channels;
 using DotNetty.Transport.Channels;
 using TCPNetterServerGUI.Server.Model;
 using TCPNetterServerGUI.Tools;
@@ -26,7 +27,7 @@ public class NetterServerHandler(MainForm mainForm) : ChannelHandlerAdapter
         switch (message.MessageType)
         {
             case "Heartbeats":  // 接受的心跳数据
-                Console.WriteLine(@$"Heartbeat received from {channelId}:{message.DeviceName}");
+                Console.WriteLine(@$"-- Heartbeat -- received from {channelId}:{message.DeviceName}");
                 LastHeartbeat[channelId] = DateTime.Now; // 更新心跳时间
                 context.WriteAndFlushAsync(new MessageModel
                 {
@@ -39,7 +40,7 @@ public class NetterServerHandler(MainForm mainForm) : ChannelHandlerAdapter
                 });
                 break;
             case "Echo":    // 接受的回响数据
-                Console.WriteLine(@$"Echo message received from {channelId}:{message.DeviceName}");
+                Console.WriteLine(@$"-- Echo -- message received from {channelId}:{message.DeviceName}");
                 context.WriteAndFlushAsync(new MessageModel
                 {
                     Id = message.Id,
@@ -51,8 +52,7 @@ public class NetterServerHandler(MainForm mainForm) : ChannelHandlerAdapter
                 });
                 break;
             case "Command": // 接受的命令数据
-                Console.WriteLine(@$"Command received:  from {channelId}:{message.DeviceName} 
-                                    | Command:{message.Command} to {message.Target} message: {message.Message}");
+                Console.WriteLine(@$"-- Command -- received:  from {channelId}:{message.DeviceName} | Command:{message.Command} to {message.Target} message: {message.Message}");
                 switch (message.Command)
                 {
                     case "Broadcast":   // 表示挂广播这个消息给其他受控制端口
@@ -72,19 +72,15 @@ public class NetterServerHandler(MainForm mainForm) : ChannelHandlerAdapter
                         NetterServerHandler.GetAllClient(channelId).Wait();
                         break;
                     case "GetMyHistory":  // 根据自身获取历史记录
-                        var deviceName = GetDeviceNameByChannelId(channelId);
-                        var myLogs = GetAllHistoryByDeviceName(deviceName);
-                        context.Channel.WriteAndFlushAsync(myLogs);
+                        SendHistoryToClient(channelId).Wait();
                         break;
                     case "GetHistory":  // 根据ID获取历史记录
-                        var targetDeviceName = GetDeviceNameByChannelId(message.Target);
-                        var targetLogs = GetAllHistoryByDeviceName(targetDeviceName);
-                        context.Channel.WriteAndFlushAsync(targetLogs);
+                        SendHistoryToClient(channelId, message.Target).Wait();
                         break;
                 }
                 break;
             case "Message": // 接受的消息数据
-                Console.WriteLine(@$"Message received: from {channelId}:{message.DeviceName} | Message {message.Message}");
+                Console.WriteLine(@$"-- Message -- received: from {channelId}:{message.DeviceName} | Message {message.Message}");
                 // 更新UI
                 mainForm.UpdateConnectionStatus(channelId!, message.DeviceName!, message.Message!);
                 // 更新对应Model
@@ -101,7 +97,7 @@ public class NetterServerHandler(MainForm mainForm) : ChannelHandlerAdapter
                 });
                 break;
             case "Callback":    // 用于客户端表示确认收到，需要回应
-                Console.WriteLine($@"Callback received: from {channelId}:{message.DeviceName} | Message {message.Message}");
+                Console.WriteLine($@"-- Callback -- received: from {channelId}:{message.DeviceName} | Message {message.Message}");
                 // 更新UI
                 mainForm.UpdateConnectionStatus(channelId!, message.DeviceName!, message.Message!);
                 // 如果这个消息携带目标ID，则需要根据这个目标ID返回这则Callback消息
@@ -111,7 +107,7 @@ public class NetterServerHandler(MainForm mainForm) : ChannelHandlerAdapter
                 }
                 break;
             case "NoCallback": // 用于客户端表示确认收到，不需要回应
-                Console.WriteLine($@"NoCallback received: from {channelId}:{message.DeviceName} | Message {message.Message}");
+                Console.WriteLine($@"-- NoCallback -- received: from {channelId}:{message.DeviceName} | Message {message.Message}");
                 break;
             default:    // 错误命令
                 context.WriteAndFlushAsync(new MessageModel
@@ -406,6 +402,72 @@ public class NetterServerHandler(MainForm mainForm) : ChannelHandlerAdapter
     }
 
     /// <summary>
+    /// 发送历史记录给客户端
+    /// </summary>
+    /// <param name="clientId">需要发送的客户端id</param>
+    /// <returns></returns>
+    public async Task SendHistoryToClient(string? clientId)
+    {
+        // 提前检查
+        if (string.IsNullOrEmpty(clientId))
+        {
+            Console.WriteLine(@$"SendHistoryToClient: {clientId} is null or empty)");
+            return;
+        }
+
+        var srvModel = Clients.GetServerModel(clientId);
+        if (srvModel == null)
+        {
+            Console.WriteLine(@$"SendHistoryToClient: Client with ID {clientId} not found.");
+            return;
+        }
+
+        var deviceName = GetDeviceNameByChannelId(clientId);
+        var myLogs = GetAllHistoryByDeviceName(deviceName);
+
+        var channel = srvModel.Channel;
+        if (channel.Open)
+        {
+            await channel.WriteAndFlushAsync(myLogs);
+        }
+
+        Console.WriteLine(@$"SendMessageToClient: Client {deviceName} send history to {clientId}");
+    }
+
+    /// <summary>
+    /// 发送历史记录给客户端
+    /// </summary>
+    /// <param name="clientId">需要发送的客户端id</param>
+    /// <param name="deviceName">需要查询的设备名称</param>
+    /// <returns></returns>
+    public async Task SendHistoryToClient(string? clientId, string? deviceName)
+    {
+        // 提前检查
+        if (string.IsNullOrEmpty(clientId) || string.IsNullOrEmpty(deviceName))
+        {
+            Console.WriteLine(@$"SendHistoryToClient: {clientId} is null or empty)");
+            return;
+        }
+
+        var srvModel = Clients.GetServerModel(clientId);
+        if (srvModel == null)
+        {
+            Console.WriteLine(@$"SendHistoryToClient: Client with ID {clientId} not found.");
+            return;
+        }
+
+        var myLogs = GetAllHistoryByDeviceName(deviceName);
+
+        var channel = srvModel.Channel;
+        if (channel.Open)
+        {
+            await channel.WriteAndFlushAsync(myLogs);
+        }
+
+        Console.WriteLine(@$"SendMessageToClient: Client {deviceName} send history to {clientId}");
+    }
+
+    /// <summary>
     /// 广播
     /// </summary>
     /// <param name="message"></param>
@@ -517,6 +579,8 @@ public class NetterServerHandler(MainForm mainForm) : ChannelHandlerAdapter
         {
             Historys.TryAdd(deviceName, new List<SaveModel> { log });
         }
+
+        Console.WriteLine(@$"AddHistory: {deviceName} - {log.Datetime} - {log.Message}");
     }
 
     /// <summary>

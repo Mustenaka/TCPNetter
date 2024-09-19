@@ -60,6 +60,11 @@ public class MessageEncoder : MessageToByteEncoder<object>
             // 如果是MessageModel的列表
             jsonMessage = JsonConvert.SerializeObject(messageList);
         }
+        else if (message is List<SaveModel> historyList)
+        {
+            // 如果是hsitoryList的列表
+            jsonMessage = JsonConvert.SerializeObject(historyList);
+        }
         else
         {
             throw new InvalidOperationException("Unsupported message type.");

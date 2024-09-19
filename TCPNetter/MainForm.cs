@@ -1,5 +1,6 @@
 using TCPNetter.Model;
 using TCPNetter.ViewModel;
+using TCPNetterServerGUI.Server.Model;
 
 namespace TCPNetter
 {
@@ -158,9 +159,20 @@ namespace TCPNetter
                                 //TBox_Result.Text += (model.MessageType + "|" + model.Target + "|" + model.DeviceName + " | " + model.Message + "\u000D\u000A");
                             }
                         }
-                        else if (obj is List<MessageModel> list)
+                        else if (obj is List<SaveModel> saveList)
                         {
-                            foreach (var mod in list)
+                            foreach (var mod in saveList)
+                            {
+                                // 更新UI
+                                _syncContext.Post(_ =>
+                                {
+                                    TBox_Result.Text += (mod.Id + " | " + mod.Datetime + " | " + mod.DeviceName + " | " + mod.Message + "\u000D\u000A");
+                                }, null);
+                            }
+                        }
+                        else if (obj is List<MessageModel> messageList)
+                        {
+                            foreach (var mod in messageList)
                             {
                                 // 更新UI
                                 _syncContext.Post(_ =>

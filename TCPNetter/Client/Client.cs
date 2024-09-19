@@ -2,6 +2,7 @@
 using System.Text.Json;
 using System.Text;
 using TCPNetter.Model;
+using TCPNetterServerGUI.Server.Model;
 
 namespace TCPNetter.Client;
 
@@ -129,6 +130,28 @@ public class Client
                     // 如果反序列化为MessageModel失败，尝试反序列化为List<MessageModel>
                     try
                     {
+                        var receivedSaveModelList = JsonSerializer.Deserialize<List<SaveModel>>(message);
+                        if (receivedSaveModelList != null)
+                        {
+                            var isSaveType = true;
+                            foreach (var model in receivedSaveModelList)
+                            {
+                                Console.WriteLine(
+                                    @$"Received from server: MessageType={model.DeviceName}, Message={model.Message}");
+
+                                if (string.IsNullOrEmpty(model.Datetime))
+                                {
+                                    isSaveType = false;
+                                    break;
+                                }
+                            }
+
+                            if (isSaveType)
+                            {
+                                return receivedSaveModelList;
+                            }
+                        }
+
                         var receivedModelList = JsonSerializer.Deserialize<List<MessageModel>>(message);
                         if (receivedModelList != null)
                         {
