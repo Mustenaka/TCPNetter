@@ -157,6 +157,7 @@ public class NetterServerHandler(MainForm mainForm) : ChannelHandlerAdapter
                 Id = clientId,
             };
             Clients.TryAdd(clientId, model);
+            LastHeartbeat.TryAdd(clientId, DateTime.Now);
             mainForm.AddConnection(clientId, "FirstConnect", "Connected");
         }
     }
@@ -194,6 +195,7 @@ public class NetterServerHandler(MainForm mainForm) : ChannelHandlerAdapter
                     if (!channel.Active) // 检查客户端是否在超时后仍然未重连
                     {
                         Clients.TryRemove(clientIdToRemove, out _);
+                        LastHeartbeat.TryRemove(clientIdToRemove, out _);
                         mainForm.RemoveConnection(clientIdToRemove);
                         Console.WriteLine(@$"Client {clientIdToRemove} | {channel.RemoteAddress} | {serverModel.DeviceName} removed after timeout.");
                     }
@@ -533,6 +535,8 @@ public class NetterServerHandler(MainForm mainForm) : ChannelHandlerAdapter
                     {
                         mainForm.RemoveConnection(clientId);
                     }
+
+                    LastHeartbeat.TryRemove(clientId, out _);
                 }
             }
         });
