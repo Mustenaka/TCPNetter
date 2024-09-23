@@ -93,7 +93,7 @@ public class NetterServerHandler(MainForm mainForm) : ChannelHandlerAdapter
                     Id = message.Id,
                     DeviceName = message.DeviceName,
                     MessageType = "NoCallback",
-                    Message = "Message received" + message.Message,
+                    Message = "Message received " + message.Message,
                 });
                 break;
             case "Callback":    // 用于客户端表示确认收到，需要回应
